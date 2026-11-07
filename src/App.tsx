@@ -65,6 +65,12 @@ export default function App() {
   });
 
   // 浏览器的自动播放策略要求：必须在用户手势里创建/恢复 AudioContext。
+  //
+  // 事件要铺全，不能只挂 pointerdown：
+  //   - iOS Safari 的用户激活令牌通常在 touchend / click 上发放，
+  //     pointerdown 不保证算数（这也是"桌面正常、手机没声音"的常见原因）；
+  //   - 老 WebView / 旧 iOS 根本没有 Pointer Events，只能靠 touchstart。
+  // unlock 是幂等的（已在运行就直接返回），多挂几个不会有副作用。
   useEffect(() => {
     const unlock = () => {
       if (engine.isRunning) return;
@@ -72,18 +78,42 @@ export default function App() {
         .start()
         .then(() => {
           engine.setMasterVolume(liveRef.current.volume);
-          setAudioReady(true);
+          // 以真实的 context.state 为准：resume() 可能被拒绝/挂起，
+          // 不能因为 Promise 返回了就点亮"已就绪"。
+          setAudioReady(engine.isRunning);
         })
         .catch(() => {
           /* 忽略：下一次手势会重试 */
         });
     };
 
-    window.addEventListener('pointerdown', unlock);
-    window.addEventListener('keydown', unlock);
+    const gestureEvents: string[] = [
+      'pointerdown',
+      'pointerup',
+      'touchstart',
+      'touchend',
+      'mousedown',
+      'click',
+      'keydown',
+    ];
+
+    // capture 保证先于业务代码执行，不会被 stopPropagation 挡掉；
+    // passive 避免拖慢移动端的滚动和点击。
+    for (const type of gestureEvents) {
+      window.addEventListener(type, unlock, { capture: true, passive: true });
+    }
+
+    // 移动端切后台再回来时，部分浏览器会把上下文挂起，补一次恢复。
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') unlock();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
-      window.removeEventListener('pointerdown', unlock);
-      window.removeEventListener('keydown', unlock);
+      for (const type of gestureEvents) {
+        window.removeEventListener(type, unlock, { capture: true });
+      }
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, []);
 

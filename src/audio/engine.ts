@@ -28,8 +28,6 @@ class AudioEngine {
   private ctx: AudioContext | null = null;
   private voiceBus: GainNode | null = null;
   private masterGain: GainNode | null = null;
-  /** 正在进行的 resume 调用，避免并发手势重复恢复。 */
-  private pending: Promise<void> | null = null;
 
   /** 已就绪的上下文；未启动时为 null。 */
   get context(): AudioContext | null {
@@ -50,6 +48,11 @@ class AudioEngine {
    */
   async start(): Promise<AudioContext> {
     if (!this.ctx) {
+      // iOS 16.4+ / Safari：不声明 playback 的话，手机侧边静音拨片打开时
+      // 网页音频会被整体静音。声明后走媒体通道（音乐类应用的常规做法）。
+      const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+      if (session) session.type = 'playback';
+
       const ctx = new (resolveContextCtor())({ latencyHint: 'interactive' });
       const bus = ctx.createGain();
       bus.gain.value = 0.9;
@@ -72,14 +75,28 @@ class AudioEngine {
     }
 
     if (this.ctx.state !== 'running') {
-      // 并发调用（比如快速连点）只保留一个 resume。
-      this.pending ??= this.ctx.resume().finally(() => {
-        this.pending = null;
-      });
-      await this.pending;
+      // 这两步都必须在手势回调的**同步段**里执行，不能挪到 await 之后。
+      this.playSilentFrame(this.ctx);
+      try {
+        await this.ctx.resume();
+      } catch {
+        // 个别浏览器在非手势环境下会拒绝恢复，留给下一次手势重试。
+      }
     }
 
     return this.ctx;
+  }
+
+  /**
+   * iOS Safari 的音频会话解锁条件：必须在用户手势里真的播出一点声音。
+   * 部分版本上单纯 resume() 不够，所以补一个 1 帧静音 buffer。
+   */
+  private playSilentFrame(ctx: AudioContext): void {
+    const source = ctx.createBufferSource();
+    source.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+    source.connect(ctx.destination);
+    source.onended = () => source.disconnect();
+    source.start(0);
   }
 
   setMasterVolume(value: number): void {
