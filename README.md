@@ -17,7 +17,9 @@ npm run preview
 ## 功能
 
 - **波形**：正弦 / 三角 / 锯齿 / 方波
-- **节奏**：16 步十六分音符音序器，BPM 50–200，循环播放
+- **节奏**：1 / 2 / 4 / 8 小节，BPM 50–200，循环播放
+- **音符时值**：1/16、1/8、1/4、1/2、1/1，支持附点（×1.5）
+- **编辑模式**：两次点击定长度（默认）；刷子模式先选时值再点格子
 - **音色**：每个音 2 个 ±7 音分失谐振荡器 + ADSR 包络 + 低通滤波（截止频率 / 共振 Q）
 - **复音**：主总线压缩器，多声部叠加不削顶
 - **实时演奏**：C4–C5 键盘，按住持续发声，松开释放
@@ -32,6 +34,8 @@ npm run preview
 | [`src/audio/engine.ts`](src/audio/engine.ts) | AudioContext 单例 + 主总线（压缩器 → 总音量） |
 | [`src/audio/voice.ts`](src/audio/voice.ts) | 单音构建：振荡器 → 滤波 → ADSR |
 | [`src/audio/scheduler.ts`](src/audio/scheduler.ts) | lookahead 步进调度器 |
+| [`src/music/pattern.ts`](src/music/pattern.ts) | 音符数据模型（起点 / 长度）与网格辅助函数 |
+| [`src/components/Sequencer.tsx`](src/components/Sequencer.tsx) | 可滚动音序器网格，渲染变长音符 |
 | [`src/hooks/useTransport.ts`](src/hooks/useTransport.ts) | 把调度器接到 React，只管 UI 高亮 |
 | [`src/components/`](src/components) | 纯展示组件 |
 
@@ -49,7 +53,7 @@ npm run dev
 
 - 钢琴音色（采样）
 - 混响 / 延迟效果器
-- 步数切换（8 / 16 / 32）、多小节、swing
+- swing 与三连音
 - Web MIDI 外接键盘
 - 频谱可视化（`AnalyserNode`）
 - 导出 WAV

@@ -46,7 +46,7 @@ body {
 /* ---------- 布局 ---------- */
 
 .app {
-  max-width: 1120px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 28px 22px 48px;
   display: flex;
@@ -137,9 +137,10 @@ body {
 
 .panel-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 10px 12px;
   margin-bottom: 12px;
 }
 
@@ -150,12 +151,6 @@ body {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--muted);
-}
-
-.panel-note {
-  margin: 0;
-  font-size: 11px;
-  color: #5f6a7d;
 }
 
 /* ---------- 走带 ---------- */
@@ -292,89 +287,318 @@ input[type='range']::-moz-range-thumb {
   background: #cfeeea;
 }
 
-/* ---------- 步进网格 ---------- */
+/* ---------- 音序器工具条 ---------- */
 
-.grid-scroll {
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-
-.step-grid {
-  display: grid;
-  gap: 6px;
+.panel-tools {
+  display: flex;
   align-items: center;
-  min-width: 700px;
+  flex-wrap: wrap;
+  gap: 8px 14px;
 }
 
-.step-head {
-  padding-bottom: 3px;
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.tool-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #5f6a7d;
+}
+
+.seg {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #10151d;
+}
+
+.seg button {
+  min-width: 34px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.seg button:hover {
+  color: #b9c6da;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.seg button.is-active {
+  color: var(--accent);
+  background: rgba(77, 226, 196, 0.14);
+}
+
+.dot-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #10151d;
+  color: var(--muted);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.dot-btn.is-active {
+  color: var(--accent);
+  border-color: rgba(77, 226, 196, 0.45);
+  background: rgba(77, 226, 196, 0.1);
+}
+
+.dot-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.ghost-btn.is-small {
+  height: 28px;
+  padding: 0 11px;
+  font-size: 11px;
+}
+
+/* ---------- 音序器网格 ---------- */
+
+.seq-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #2a3448 transparent;
+}
+
+.seq-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.seq-scroll::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: #2a3448;
+}
+
+.seq-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.seq-canvas {
+  display: flex;
+  flex-direction: column;
+}
+
+.seq-ruler-row {
+  height: 24px;
+}
+
+.seq-ruler-track {
+  position: relative;
+  height: 24px;
+}
+
+.seq-bar-num {
+  position: absolute;
+  top: 0;
+  line-height: 24px;
+  text-align: center;
   font-family: ui-monospace, Menlo, monospace;
   font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
   color: #5b6578;
 }
 
-.step-head.is-beat {
-  color: #8b97ab;
+.seq-bar-num::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 16px;
+  bottom: 0;
+  width: 1px;
+  background: #2a3448;
 }
 
-.step-head.is-current {
-  color: var(--accent);
-  text-shadow: 0 0 10px rgba(77, 226, 196, 0.6);
+.seq-row {
+  display: flex;
+  align-items: center;
+  height: 30px;
 }
 
-.row-label {
+.seq-row-label {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   padding-right: 10px;
+  background: var(--panel);
   font-family: ui-monospace, Menlo, monospace;
   font-size: 11px;
-  text-align: right;
   color: #6d788c;
 }
 
-.row-label.is-alt {
-  color: #8a95a9;
+.seq-corner {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #5b6578;
 }
 
-.step-cell {
-  height: 26px;
-  padding: 0;
-  border: 1px solid #1f2735;
-  border-radius: 7px;
-  background: #171d28;
+.seq-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 30px;
   cursor: pointer;
-  transition: background 0.1s, border-color 0.1s, box-shadow 0.12s, transform 0.06s;
+  touch-action: pan-x;
 }
 
-.step-cell:hover {
-  background: #202a3a;
-  border-color: #2e3a4e;
+.seq-cell {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 24px;
+  margin-right: 4px;
+  border: 1px solid #1f2735;
+  border-radius: 6px;
+  background: #171d28;
 }
 
-.step-cell:active {
-  transform: scale(0.97);
-}
-
-.step-cell.is-beat:not(.is-on) {
+.seq-cell.is-beat {
   background: #1b2331;
 }
 
-.step-cell.is-on {
-  border-color: #7cf7de;
+.seq-cell.is-bar {
+  border-left-color: #38445a;
+}
+
+.seq-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 34px;
+  border-left: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.055);
+  pointer-events: none;
+}
+
+.seq-note {
+  position: absolute;
+  top: 3px;
+  z-index: 2;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #7cf7de;
+  border-radius: 6px;
   background: linear-gradient(180deg, #6bf3d8, #2cbfa1);
-  box-shadow: 0 0 14px -2px rgba(77, 226, 196, 0.55);
+  box-shadow: 0 0 14px -3px rgba(77, 226, 196, 0.6);
+  color: #053a32;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  user-select: none;
 }
 
-.step-cell.is-on:hover {
-  background: linear-gradient(180deg, #86f8e2, #39d3b3);
+.seq-ghost {
+  position: absolute;
+  top: 3px;
+  z-index: 3;
+  height: 24px;
+  border: 1px dashed rgba(255, 196, 107, 0.85);
+  border-radius: 6px;
+  background: rgba(255, 196, 107, 0.13);
+  pointer-events: none;
 }
 
-.step-cell.is-current {
-  border-color: rgba(255, 255, 255, 0.24);
+/* ---------- 帮助气泡 ---------- */
+
+.help-tip {
+  position: relative;
+  display: inline-flex;
 }
 
-.step-cell.is-on.is-current {
-  box-shadow: 0 0 20px 0 rgba(77, 226, 196, 0.8);
+.help-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #10151d;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.help-btn:hover,
+.help-btn.is-open {
+  color: var(--accent);
+  border-color: rgba(77, 226, 196, 0.5);
+  background: rgba(77, 226, 196, 0.08);
+}
+
+.help-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  z-index: 20;
+  width: 262px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #151a24;
+  box-shadow: 0 18px 40px -18px #000;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #aab6c9;
+}
+
+.help-pop.is-right {
+  right: 0;
+}
+
+.help-pop.is-left {
+  left: 0;
+}
+
+.help-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 10px;
+}
+
+.help-block b {
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.help-foot {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: #6d788c;
 }
 
 /* ---------- 音色面板 ---------- */
@@ -487,22 +711,6 @@ input[type='range']::-moz-range-thumb {
   background: linear-gradient(180deg, #2ba893, #156f61 80%);
 }
 
-/* ---------- 页脚 ---------- */
-
-.footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 4px 4px 0;
-  font-size: 11px;
-  color: #4f5a6c;
-}
-
-.footer-tip {
-  color: rgba(69, 80, 97, 0.9);
-}
-
 /* ---------- 响应式 ---------- */
 
 @media (max-width: 900px) {
@@ -512,11 +720,17 @@ input[type='range']::-moz-range-thumb {
 
   .transport {
     flex-wrap: wrap;
+    justify-content: space-between;
     gap: 14px;
   }
 
   .transport-fields {
+    order: 3;
     flex-basis: 100%;
+  }
+
+  .transport .ghost-btn {
+    order: 2;
   }
 
   .transport .slider {
@@ -540,6 +754,23 @@ input[type='range']::-moz-range-thumb {
 
   .wave-picker {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .panel-tools {
+    gap: 8px 10px;
+  }
+
+  .panel-tools .help-tip {
+    margin-left: auto;
+  }
+
+  .seg button {
+    min-width: 30px;
+    padding: 5px 7px;
+  }
+
+  .help-pop {
+    width: 232px;
   }
 }
 

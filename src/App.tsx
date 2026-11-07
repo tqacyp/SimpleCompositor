@@ -2,75 +2,91 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { engine } from './audio/engine';
 import { DEFAULT_SYNTH, type SynthParams } from './audio/voice';
+import { HelpTip } from './components/HelpTip';
 import { PianoKeys } from './components/PianoKeys';
-import { StepGrid } from './components/StepGrid';
+import { Segmented } from './components/Segmented';
+import { Sequencer } from './components/Sequencer';
 import { SynthPanel } from './components/SynthPanel';
 import { TransportBar } from './components/TransportBar';
 import { useTransport } from './hooks/useTransport';
+import {
+  clampNotes,
+  createSeedNotes,
+  maxLengthFor,
+  findNoteAt,
+  nextNoteId,
+  ROWS,
+  STEPS_PER_BAR,
+  type Note,
+} from './music/pattern';
 
-/** 网格的行：从高到低。C 大调五声音阶，随手点都不容易难听。 */
-const ROWS = [72, 69, 67, 64, 62, 60, 57, 55];
-const STEPS = 16;
+type EditMode = 'range' | 'brush';
 
-/** 初始演示节奏（x = 触发）。 */
-const SEED = [
-  '........x.......',
-  '................',
-  '....x......x....',
-  '..x...x...x...x.',
-  '..............x.',
-  'x.......x.......',
-  '................',
-  '................',
+const BARS_OPTIONS = [1, 2, 4, 8].map((value) => ({ value, label: String(value) }));
+
+const MODE_OPTIONS: Array<{ value: EditMode; label: string }> = [
+  { value: 'range', label: '两次点击' },
+  { value: 'brush', label: '刷子' },
 ];
 
-function createSeedPattern(): boolean[][] {
-  return SEED.map((row) => Array.from({ length: STEPS }, (_, step) => row[step] === 'x'));
-}
-
-function createEmptyPattern(): boolean[][] {
-  return ROWS.map(() => Array.from({ length: STEPS }, () => false));
-}
+const DURATION_OPTIONS = [
+  { value: 1, label: '1/16' },
+  { value: 2, label: '1/8' },
+  { value: 4, label: '1/4' },
+  { value: 8, label: '1/2' },
+  { value: 16, label: '1/1' },
+];
 
 export default function App() {
-  const [pattern, setPattern] = useState<boolean[][]>(createSeedPattern);
+  const [notes, setNotes] = useState<Note[]>(createSeedNotes);
+  const [bars, setBars] = useState(2);
+  const [mode, setMode] = useState<EditMode>('range');
+  const [brushBase, setBrushBase] = useState(2);
+  const [brushDotted, setBrushDotted] = useState(false);
+  const [anchor, setAnchor] = useState<{ row: number; step: number } | null>(null);
+  const [hoverStep, setHoverStep] = useState<number | null>(null);
+
   const [params, setParams] = useState<SynthParams>(DEFAULT_SYNTH);
   const [bpm, setBpm] = useState(112);
   const [volume, setVolume] = useState(0.75);
   const [audioReady, setAudioReady] = useState(false);
 
-  // 调度回调在 React 之外执行，必须通过 ref 读到最新参数，
-  // 否则它会一直用首次渲染时的闭包值。
-  const liveRef = useRef({ pattern, params, bpm, volume });
+  const total = bars * STEPS_PER_BAR;
+  const brushLength = brushDotted && brushBase >= 2 ? Math.round(brushBase * 1.5) : brushBase;
+
+  // 调度回调在 React 之外执行，必须通过 ref 读到最新状态。
+  const liveRef = useRef({ notes, params, bpm, volume });
   useEffect(() => {
-    liveRef.current = { pattern, params, bpm, volume };
+    liveRef.current = { notes, params, bpm, volume };
   });
 
-  /** 每一步：把该行该列的所有音符排进音频时钟。 */
+  /** 每一步只触发"起点在这一格"的音符，长度决定发声多久。 */
   const handleStep = useCallback((step: number, time: number) => {
     const current = liveRef.current;
     const stepDuration = 60 / current.bpm / 4;
 
-    for (let row = 0; row < ROWS.length; row++) {
-      if (current.pattern[row]?.[step]) {
-        engine.playAt(current.params, ROWS[row], time, stepDuration * 0.9, 0.9);
-      }
+    for (const note of current.notes) {
+      if (note.start !== step) continue;
+      engine.playAt(
+        current.params,
+        ROWS[note.row],
+        time,
+        note.length * stepDuration * 0.95,
+        0.9,
+      );
     }
   }, []);
 
   const { isPlaying, currentStep, toggle, stop } = useTransport({
     bpm,
-    steps: STEPS,
+    steps: total,
     onStep: handleStep,
   });
 
-  // 浏览器的自动播放策略要求：必须在用户手势里创建/恢复 AudioContext。
-  //
-  // 事件要铺全，不能只挂 pointerdown：
-  //   - iOS Safari 的用户激活令牌通常在 touchend / click 上发放，
-  //     pointerdown 不保证算数（这也是"桌面正常、手机没声音"的常见原因）；
-  //   - 老 WebView / 旧 iOS 根本没有 Pointer Events，只能靠 touchstart。
-  // unlock 是幂等的（已在运行就直接返回），多挂几个不会有副作用。
+  /* ---------------- 音频解锁 ---------------- */
+
+  // 事件要铺全：iOS Safari 的用户激活令牌通常在 touchend / click 上发放，
+  // pointerdown 不保证算数。unlock 是幂等的，多挂几个没有副作用。
   useEffect(() => {
     const unlock = () => {
       if (engine.isRunning) return;
@@ -78,12 +94,10 @@ export default function App() {
         .start()
         .then(() => {
           engine.setMasterVolume(liveRef.current.volume);
-          // 以真实的 context.state 为准：resume() 可能被拒绝/挂起，
-          // 不能因为 Promise 返回了就点亮"已就绪"。
           setAudioReady(engine.isRunning);
         })
         .catch(() => {
-          /* 忽略：下一次手势会重试 */
+          /* 下一次手势会重试 */
         });
     };
 
@@ -97,13 +111,10 @@ export default function App() {
       'keydown',
     ];
 
-    // capture 保证先于业务代码执行，不会被 stopPropagation 挡掉；
-    // passive 避免拖慢移动端的滚动和点击。
     for (const type of gestureEvents) {
       window.addEventListener(type, unlock, { capture: true, passive: true });
     }
 
-    // 移动端切后台再回来时，部分浏览器会把上下文挂起，补一次恢复。
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') unlock();
     };
@@ -121,7 +132,8 @@ export default function App() {
     engine.setMasterVolume(volume);
   }, [volume]);
 
-  // 空格键播放 / 停止。
+  /* ---------------- 键盘快捷键 ---------------- */
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code !== 'Space') return;
@@ -134,9 +146,8 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [toggle]);
 
-  // 实时演奏：按住发声，松开释放。
-  // pending 记录"等待引擎启动"的音，cancelled 记录在等待期间就被松开的音，
-  // 否则快速点一下会在启动完成后留下一个没人释放的长音。
+  /* ---------------- 实时演奏 ---------------- */
+
   const heldRef = useRef(new Map<number, () => void>());
   const pendingRef = useRef(new Set<number>());
   const cancelledRef = useRef(new Set<number>());
@@ -151,7 +162,6 @@ export default function App() {
       pendingRef.current.delete(midi);
       if (cancelledRef.current.delete(midi)) return;
 
-      // 30 秒是个"足够长"的名义时长，实际由松键时的 release 收尾。
       const handle = engine.playNow(liveRef.current.params, midi, 30, 0.9);
       if (handle) heldRef.current.set(midi, handle.release);
     });
@@ -175,7 +185,6 @@ export default function App() {
     heldRef.current.clear();
   }, []);
 
-  // 指针在琴键外抬起、窗口失焦时，兜底释放所有音，避免卡住长音。
   useEffect(() => {
     window.addEventListener('pointerup', releaseAllNotes);
     window.addEventListener('pointercancel', releaseAllNotes);
@@ -187,40 +196,115 @@ export default function App() {
     };
   }, [releaseAllNotes]);
 
-  const toggleCell = useCallback(
+  /* ---------------- 节奏编辑 ---------------- */
+
+  // 小节数变少时裁掉越界音符。
+  useEffect(() => {
+    setNotes((prev) => clampNotes(prev, bars * STEPS_PER_BAR));
+  }, [bars]);
+
+  // 换编辑模式时丢掉未完成的起点。
+  useEffect(() => {
+    setAnchor(null);
+    setHoverStep(null);
+  }, [mode]);
+
+  useEffect(() => {
+    if (!anchor) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setAnchor(null);
+      setHoverStep(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [anchor]);
+
+  const previewRow = useCallback((row: number) => {
+    void engine.start().then(() => {
+      engine.playNow(liveRef.current.params, ROWS[row], 0.18, 0.9);
+    });
+  }, []);
+
+  const handleCellDown = useCallback(
     (row: number, step: number) => {
-      const turningOn = !pattern[row][step];
+      const hit = findNoteAt(notes, row, step);
 
-      setPattern((prev) =>
-        prev.map((line, rowIndex) =>
-          rowIndex === row
-            ? line.map((on, stepIndex) => (stepIndex === step ? !on : on))
-            : line,
-        ),
-      );
-
-      // 点亮格子时试听一下，调音色时不用一直按播放。
-      if (turningOn) {
-        void engine.start().then(() => {
-          engine.playNow(params, ROWS[row], 0.22, 0.9);
-        });
+      if (mode === 'brush') {
+        if (hit) {
+          setNotes((prev) => prev.filter((note) => note.id !== hit.id));
+          return;
+        }
+        const length = Math.min(brushLength, maxLengthFor(notes, row, step, total));
+        setNotes((prev) => [...prev, { id: nextNoteId(), row, start: step, length }]);
+        previewRow(row);
+        return;
       }
+
+      // 两次点击：点已有音符 = 删除
+      if (hit) {
+        setNotes((prev) => prev.filter((note) => note.id !== hit.id));
+        setAnchor(null);
+        setHoverStep(null);
+        return;
+      }
+
+      // 第一次点击（或换了行）= 定起点
+      if (!anchor || anchor.row !== row) {
+        setAnchor({ row, step });
+        setHoverStep(step);
+        previewRow(row);
+        return;
+      }
+
+      // 第二次点击 = 定终点
+      const from = Math.min(anchor.step, step);
+      const to = Math.max(anchor.step, step);
+
+      // 覆盖式绘制：范围内的旧音符让位。
+      setNotes((prev) => [
+        ...prev.filter(
+          (note) => note.row !== row || note.start + note.length <= from || note.start > to,
+        ),
+        { id: nextNoteId(), row, start: from, length: to - from + 1 },
+      ]);
+      setAnchor(null);
+      setHoverStep(null);
+      previewRow(row);
     },
-    [pattern, params],
+    [anchor, brushLength, mode, notes, previewRow, total],
   );
+
+  const handleCellHover = useCallback(
+    (row: number, step: number) => {
+      if (!anchor || anchor.row !== row) return;
+      // 同一格重复设置同一原始值，React 会直接 bail out。
+      setHoverStep(step);
+    },
+    [anchor],
+  );
+
+  const cancelAnchor = useCallback(() => {
+    setAnchor(null);
+    setHoverStep(null);
+  }, []);
 
   const updateParams = useCallback((patch: Partial<SynthParams>) => {
     setParams((prev) => ({ ...prev, ...patch }));
   }, []);
 
   const handleClear = useCallback(() => {
-    setPattern(createEmptyPattern());
+    setNotes([]);
+    setAnchor(null);
+    setHoverStep(null);
   }, []);
 
   const handleStopAll = useCallback(() => {
     stop();
     releaseAllNotes();
   }, [stop, releaseAllNotes]);
+
+  /* ---------------- 渲染 ---------------- */
 
   return (
     <div className="app">
@@ -248,13 +332,82 @@ export default function App() {
       <section className="panel sequencer-panel">
         <div className="panel-head">
           <h2 className="panel-title">节奏</h2>
-          <p className="panel-note">每格 = 十六分音符 · 空格键播放/停止</p>
+
+          <div className="panel-tools">
+            <div className="tool-group">
+              <span className="tool-label">小节</span>
+              <Segmented
+                label="小节数"
+                options={BARS_OPTIONS}
+                value={bars}
+                onChange={setBars}
+              />
+            </div>
+
+            <div className="tool-group">
+              <span className="tool-label">编辑</span>
+              <Segmented
+                label="编辑模式"
+                options={MODE_OPTIONS}
+                value={mode}
+                onChange={setMode}
+              />
+            </div>
+
+            {mode === 'brush' && (
+              <div className="tool-group">
+                <span className="tool-label">时值</span>
+                <Segmented
+                  label="新音符时值"
+                  options={DURATION_OPTIONS}
+                  value={brushBase}
+                  onChange={(value) => {
+                    setBrushBase(value);
+                    if (value < 2) setBrushDotted(false);
+                  }}
+                />
+                <button
+                  type="button"
+                  className={`dot-btn ${brushDotted && brushBase >= 2 ? 'is-active' : ''}`}
+                  disabled={brushBase < 2}
+                  title="附点：时值 ×1.5"
+                  aria-label="附点"
+                  aria-pressed={brushDotted && brushBase >= 2}
+                  onClick={() => setBrushDotted((value) => !value)}
+                >
+                  ·
+                </button>
+              </div>
+            )}
+
+            {anchor && (
+              <button type="button" className="ghost-btn is-small" onClick={cancelAnchor}>
+                取消起点
+              </button>
+            )}
+
+            <HelpTip label="节奏编辑说明">
+              <p className="help-block">
+                <b>两次点击</b>
+                点起点，再点终点定长度。点已有音符删除。
+              </p>
+              <p className="help-block">
+                <b>刷子</b>
+                先选时值，再点格子放下。
+              </p>
+              <p className="help-foot">空格键播放 / 停止 · 1 小节 = 16 格</p>
+            </HelpTip>
+          </div>
         </div>
-        <StepGrid
-          rows={ROWS}
-          pattern={pattern}
+
+        <Sequencer
+          notes={notes}
+          bars={bars}
+          anchor={anchor}
+          hoverStep={hoverStep}
           currentStep={currentStep}
-          onToggle={toggleCell}
+          onCellDown={handleCellDown}
+          onCellHover={handleCellHover}
         />
       </section>
 
@@ -264,18 +417,13 @@ export default function App() {
         <section className="panel keys-panel">
           <div className="panel-head">
             <h2 className="panel-title">实时演奏</h2>
-            <p className="panel-note">按住持续发声，松开释放</p>
+            <HelpTip label="键盘说明">
+              <p className="help-block">按住琴键持续发声，松开即释放。</p>
+            </HelpTip>
           </div>
           <PianoKeys baseMidi={60} onNoteOn={noteOn} onNoteOff={noteOff} />
         </section>
       </div>
-
-      <footer className="footer">
-        <span>
-          四种波形 · 每音两个失谐振荡器 · ADSR 包络 · 低通滤波 · 主总线压缩
-        </span>
-        <span className="footer-tip">音序器按音频时钟排期，UI 掉帧不影响节奏</span>
-      </footer>
     </div>
   );
 }
