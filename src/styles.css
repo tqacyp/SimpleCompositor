@@ -413,20 +413,10 @@ input[type='range']::-moz-range-thumb {
   position: absolute;
   top: 0;
   line-height: 24px;
-  text-align: center;
+  text-align: left;
   font-family: ui-monospace, Menlo, monospace;
   font-size: 10px;
   color: #5b6578;
-}
-
-.seq-bar-num::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 16px;
-  bottom: 0;
-  width: 1px;
-  background: #2a3448;
 }
 
 .seq-row {
